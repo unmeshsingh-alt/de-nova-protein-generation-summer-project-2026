@@ -1,0 +1,186 @@
+<ROSETTASCRIPTS>
+    <!-- ===================================================================
+         Two-Helix Antiparallel Bundle — Backbone Generation
+         Topology: H1 (23 res) --> hairpin loop --> H2 (20 res)
+         Spacing: ~11 Å between helices.
+
+         Derived directly from the previous successful 2-helix XML.
+         Modifications:
+         - H1 length increased to 23.
+         - H2 length increased to 20.
+         - Mid-packing constraint distance increased to 11.0 Å.
+         - N/C-terminal constraint distance increased to 12.0 Å.
+         - Loop motif extended to "3LX,4LX" (a 1-2 res loop cannot physically span 11 Å).
+         =================================================================== -->
+
+    <SCOREFXNS>
+        <ScoreFunction name="CENTROID" weights="fldsgn_cen" symmetric="0">
+            <Reweight scoretype="hbond_lr_bb"              weight="1.0" />
+            <Reweight scoretype="hbond_sr_bb"              weight="1.0" />
+            <Reweight scoretype="atom_pair_constraint"     weight="1.0" />
+            <Reweight scoretype="coordinate_constraint"    weight="1.0" />
+            <Reweight scoretype="angle_constraint"         weight="1.0" />
+            <Reweight scoretype="dihedral_constraint"      weight="1.0" />
+            <Reweight scoretype="backbone_stub_constraint" weight="1.0" />
+            <Reweight scoretype="omega"                    weight="0.5" />
+            <Reweight scoretype="rama"                     weight="0.6" />
+        </ScoreFunction>
+    </SCOREFXNS>
+
+    <RESIDUE_SELECTORS>
+        <SecondaryStructure name="loops"     ss="L" use_dssp="0" />
+        <Not                name="not_loops" selector="loops" />
+
+        <!-- H1_nterm: N-terminal end of H1 (residues 1,2,3).
+             In an antiparallel bundle, H1_nterm must be close to H2_cterm.
+             Diagram:
+               H1: N[1..11..23]C
+                                loop (3-4 res)
+               H2:      C[20..10..1]N
+             So H1_nterm pairs with H2_cterm. -->
+        <NamedSegment name="H1_nterm" segment="H1" residues="1,2,3"    error_on_missing_segment="0" />
+        <!-- Rosetta Schema Bug Workaround: The 'residues' attribute regex in your
+             version of Rosetta only allows single digits (1-9 or -1 to -9).
+             To bypass this, we use single-digit index pairs that align across the 11A gap:
+               - H1(9) pairs with H2(-8) [which is H2 res 13]
+               - H1(-9) [which is H1 res 15] pairs with H2(7) -->
+        <NamedSegment name="H1_mid1"   segment="H1" residues="9"     error_on_missing_segment="0" />
+        <NamedSegment name="H2_mid1"   segment="H2" residues="-8"    error_on_missing_segment="0" />
+        
+        <NamedSegment name="H1_mid2"   segment="H1" residues="-9"    error_on_missing_segment="0" />
+        <NamedSegment name="H2_mid2"   segment="H2" residues="7"     error_on_missing_segment="0" />
+        <NamedSegment name="H2_cterm" segment="H2" residues="-1,-2,-3" error_on_missing_segment="0" />
+    </RESIDUE_SELECTORS>
+
+    <FILTERS>
+        <!-- Geometry: valid attributes are omega (cutoff in degrees),
+             cart_bonded (energy cutoff), start (first residue checked). -->
+        <Geometry         name="geometry" />
+        <Geometry         name="omega"    omega="165" cart_bonded="35" start="1" confidence="1" />
+        <SecondaryStructure name="secstruct_filter"
+                            residue_selector="not_loops"
+                            compute_pose_secstruct_by_dssp="1" />
+        <HelixKink        name="kink" />
+        <HelixPairing     name="helix_pairs" use_dssp="0" />
+    </FILTERS>
+
+    <MOVERS>
+        <!-- Two distance constraints that together uniquely define
+             ANTIPARALLEL helix packing at 11 A distance:
+
+             1. h1_nterm_h2_cterm — the "far-end" constraint:
+                H1 N-terminus must be near H2 C-terminus.
+                Slightly larger target (12.0 A) to accommodate the 11 A core distance 
+                plus potential relative shifts of the helix termini.
+
+             2. h1_h2_mid1 and h1_h2_mid2 — the "mid-packing" constraints:
+                Two pairs along the helices to enforce parallel/antiparallel tracks
+                at exactly 11.0 A distance.
+        -->
+        <AddConstraints name="build_csts">
+            <DistanceConstraintGenerator name="h1_nterm_h2_cterm"
+                function="HARMONIC 12.0 1.5"
+                residue_selector1="H1_nterm"
+                residue_selector2="H2_cterm" />
+            <DistanceConstraintGenerator name="h1_h2_mid1"
+                function="HARMONIC 11.0 1.0"
+                residue_selector1="H1_mid1"
+                residue_selector2="H2_mid1" />
+            <DistanceConstraintGenerator name="h1_h2_mid2"
+                function="HARMONIC 11.0 1.0"
+                residue_selector1="H1_mid2"
+                residue_selector2="H2_mid2" />
+        </AddConstraints>
+
+        <RemoveConstraints name="rm_build_csts"
+                           constraint_generators="h1_nterm_h2_cterm,h1_h2_mid1,h1_h2_mid2" />
+
+        <MinMover            name="cenmin"    scorefxn="CENTROID"
+                             bb="1" chi="0" jump="0" cartesian="0" />
+        <SetSecStructEnergies name="set_ssene1" scorefxn="CENTROID" />
+
+        <BuildDeNovoBackboneMover name="build_bb" dump_pdbs="0">
+
+            <CompoundArchitect name="two_helix_arch">
+                <Architects>
+                    <!-- H1: 23 res, H2: 20 res. -->
+                    <HelixArchitect name="H1" length="23" />
+                    <HelixArchitect name="H2" length="20" />
+                </Architects>
+
+                <Connections>
+                    <!-- Hairpin loop motif: 
+                         Since the helices are now 11 A apart, a 1-2 residue loop 
+                         cannot bridge the gap. We need at least 3-4 residues 
+                         to comfortably span 11 A while forming a stable turn. -->
+                    <Connection name="H1_H2"
+                                motif="3LX,4LX"
+                                segment1="H1" segment2="H2"
+                                ideal_abego="1" />
+                </Connections>
+
+                <Pairing>
+                    <HelixPairing segments="H1,H2" parallel="0" />
+                </Pairing>
+            </CompoundArchitect>
+
+            <RemodelLoopMoverPoseFolder scorefxn="CENTROID" />
+
+            <CompoundPerturber>
+                <HelixPerturber      architect="H1" />
+                <HelixPerturber      architect="H2" />
+                <ConnectionPerturber architect="H1_H2" />
+            </CompoundPerturber>
+
+            <PreFoldMovers>
+                <Add mover="set_ssene1" />
+                <Add mover="build_csts" />
+            </PreFoldMovers>
+
+            <PostFoldMovers>
+                <Add mover="cenmin" />
+                <Add mover="rm_build_csts" />
+            </PostFoldMovers>
+
+            <Filters>
+                <Add filter="geometry" />
+                <Add filter="secstruct_filter" />
+                <Add filter="kink" />
+                <Add filter="helix_pairs" />
+            </Filters>
+
+        </BuildDeNovoBackboneMover>
+    </MOVERS>
+
+    <FILTERS>
+        <!-- ConstraintScore with confidence=1 = HARD GATES.
+             Slightly relaxed thresholds (2.0 and 1.5) compared to the tight 6.5A version
+             to give the sampler some headroom with the new 11A spacing. -->
+        <ConstraintScore name="h1_nterm_h2_cterm_score"
+                         constraint_generators="h1_nterm_h2_cterm"
+                         threshold="2.0"
+                         confidence="1" />
+        <ConstraintScore name="h1_h2_mid1_score"
+                         constraint_generators="h1_h2_mid1"
+                         threshold="1.5"
+                         confidence="1" />
+        <ConstraintScore name="h1_h2_mid2_score"
+                         constraint_generators="h1_h2_mid2"
+                         threshold="1.5"
+                         confidence="1" />
+    </FILTERS>
+
+    <PROTOCOLS>
+        <Add mover="build_bb" />
+
+        <Add filter="geometry" />
+        <Add filter="omega" />
+        <Add filter="secstruct_filter" />
+        <Add filter="kink" />
+
+        <Add filter="h1_nterm_h2_cterm_score" />
+        <Add filter="h1_h2_mid1_score" />
+        <Add filter="h1_h2_mid2_score" />
+    </PROTOCOLS>
+
+</ROSETTASCRIPTS>

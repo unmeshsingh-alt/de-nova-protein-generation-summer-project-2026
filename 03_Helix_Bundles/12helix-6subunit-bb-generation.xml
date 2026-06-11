@@ -1,0 +1,297 @@
+<ROSETTASCRIPTS>
+    <!-- ===================================================================
+         Twelve-Helix (6-Subunit) Backbone Generation
+         Topology: 6 Tandem repeats of the 2-helix hairpin subunit.
+         Subunits: S1(H1,H2) - S2(H3,H4) - S3(H5,H6) - S4(H7,H8) - S5(H9,H10) - S6(H11,H12)
+         
+         Odd Helices (1,3,5,7,9,11): length 23
+         Even Helices (2,4,6,8,10,12): length 20
+         
+         All helix-helix packings (intra and inter) are constrained to 11.0 A
+         in an antiparallel orientation to form a continuous 6-subunit sheet/barrel.
+         =================================================================== -->
+
+    <SCOREFXNS>
+        <ScoreFunction name="CENTROID" weights="fldsgn_cen" symmetric="0">
+            <Reweight scoretype="hbond_lr_bb"              weight="1.0" />
+            <Reweight scoretype="hbond_sr_bb"              weight="1.0" />
+            <Reweight scoretype="atom_pair_constraint"     weight="1.0" />
+            <Reweight scoretype="coordinate_constraint"    weight="1.0" />
+            <Reweight scoretype="angle_constraint"         weight="1.0" />
+            <Reweight scoretype="dihedral_constraint"      weight="1.0" />
+            <Reweight scoretype="backbone_stub_constraint" weight="1.0" />
+            <Reweight scoretype="omega"                    weight="0.5" />
+            <Reweight scoretype="rama"                     weight="0.6" />
+        </ScoreFunction>
+    </SCOREFXNS>
+
+    <RESIDUE_SELECTORS>
+        <SecondaryStructure name="loops" ss="L" use_dssp="0" />
+        <Not name="not_loops" selector="loops" />
+
+        <!-- ==========================================================
+             Selectors for Odd Helices (Length 23)
+             mid1=9, mid2=-9
+             ========================================================== -->
+        <!-- H1 -->
+        <NamedSegment name="H1_nterm" segment="H1" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H1_cterm" segment="H1" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H1_mid1"  segment="H1" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H1_mid2"  segment="H1" residues="-9" error_on_missing_segment="0" />
+        <!-- H3 -->
+        <NamedSegment name="H3_nterm" segment="H3" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H3_cterm" segment="H3" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H3_mid1"  segment="H3" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H3_mid2"  segment="H3" residues="-9" error_on_missing_segment="0" />
+        <!-- H5 -->
+        <NamedSegment name="H5_nterm" segment="H5" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H5_cterm" segment="H5" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H5_mid1"  segment="H5" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H5_mid2"  segment="H5" residues="-9" error_on_missing_segment="0" />
+        <!-- H7 -->
+        <NamedSegment name="H7_nterm" segment="H7" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H7_cterm" segment="H7" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H7_mid1"  segment="H7" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H7_mid2"  segment="H7" residues="-9" error_on_missing_segment="0" />
+        <!-- H9 -->
+        <NamedSegment name="H9_nterm" segment="H9" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H9_cterm" segment="H9" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H9_mid1"  segment="H9" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H9_mid2"  segment="H9" residues="-9" error_on_missing_segment="0" />
+        <!-- H11 -->
+        <NamedSegment name="H11_nterm" segment="H11" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H11_cterm" segment="H11" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H11_mid1"  segment="H11" residues="9" error_on_missing_segment="0" />
+        <NamedSegment name="H11_mid2"  segment="H11" residues="-9" error_on_missing_segment="0" />
+
+        <!-- ==========================================================
+             Selectors for Even Helices (Length 20)
+             mid1=-8, mid2=7
+             ========================================================== -->
+        <!-- H2 -->
+        <NamedSegment name="H2_nterm" segment="H2" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H2_cterm" segment="H2" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H2_mid1"  segment="H2" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H2_mid2"  segment="H2" residues="7" error_on_missing_segment="0" />
+        <!-- H4 -->
+        <NamedSegment name="H4_nterm" segment="H4" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H4_cterm" segment="H4" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H4_mid1"  segment="H4" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H4_mid2"  segment="H4" residues="7" error_on_missing_segment="0" />
+        <!-- H6 -->
+        <NamedSegment name="H6_nterm" segment="H6" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H6_cterm" segment="H6" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H6_mid1"  segment="H6" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H6_mid2"  segment="H6" residues="7" error_on_missing_segment="0" />
+        <!-- H8 -->
+        <NamedSegment name="H8_nterm" segment="H8" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H8_cterm" segment="H8" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H8_mid1"  segment="H8" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H8_mid2"  segment="H8" residues="7" error_on_missing_segment="0" />
+        <!-- H10 -->
+        <NamedSegment name="H10_nterm" segment="H10" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H10_cterm" segment="H10" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H10_mid1"  segment="H10" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H10_mid2"  segment="H10" residues="7" error_on_missing_segment="0" />
+        <!-- H12 -->
+        <NamedSegment name="H12_nterm" segment="H12" residues="1,2,3" error_on_missing_segment="0" />
+        <NamedSegment name="H12_cterm" segment="H12" residues="-1,-2,-3" error_on_missing_segment="0" />
+        <NamedSegment name="H12_mid1"  segment="H12" residues="-8" error_on_missing_segment="0" />
+        <NamedSegment name="H12_mid2"  segment="H12" residues="7" error_on_missing_segment="0" />
+    </RESIDUE_SELECTORS>
+
+    <FILTERS>
+        <Geometry         name="geometry" />
+        <Geometry         name="omega"    omega="165" cart_bonded="35" start="1" confidence="1" />
+        <SecondaryStructure name="secstruct_filter" residue_selector="not_loops" compute_pose_secstruct_by_dssp="1" />
+        <HelixKink        name="kink" />
+    </FILTERS>
+
+    <MOVERS>
+        <AddConstraints name="build_csts">
+            <!-- ==========================================================
+                 INTRA-SUBUNIT CONSTRAINTS (Odd vs Even)
+                 H1-H2, H3-H4, H5-H6, H7-H8, H9-H10, H11-H12
+                 ========================================================== -->
+            <!-- Subunit 1 -->
+            <DistanceConstraintGenerator name="intra_S1_far"  function="HARMONIC 12.0 1.5" residue_selector1="H1_nterm" residue_selector2="H2_cterm" />
+            <DistanceConstraintGenerator name="intra_S1_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H1_mid1"  residue_selector2="H2_mid1" />
+            <DistanceConstraintGenerator name="intra_S1_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H1_mid2"  residue_selector2="H2_mid2" />
+            <!-- Subunit 2 -->
+            <DistanceConstraintGenerator name="intra_S2_far"  function="HARMONIC 12.0 1.5" residue_selector1="H3_nterm" residue_selector2="H4_cterm" />
+            <DistanceConstraintGenerator name="intra_S2_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H3_mid1"  residue_selector2="H4_mid1" />
+            <DistanceConstraintGenerator name="intra_S2_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H3_mid2"  residue_selector2="H4_mid2" />
+            <!-- Subunit 3 -->
+            <DistanceConstraintGenerator name="intra_S3_far"  function="HARMONIC 12.0 1.5" residue_selector1="H5_nterm" residue_selector2="H6_cterm" />
+            <DistanceConstraintGenerator name="intra_S3_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H5_mid1"  residue_selector2="H6_mid1" />
+            <DistanceConstraintGenerator name="intra_S3_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H5_mid2"  residue_selector2="H6_mid2" />
+            <!-- Subunit 4 -->
+            <DistanceConstraintGenerator name="intra_S4_far"  function="HARMONIC 12.0 1.5" residue_selector1="H7_nterm" residue_selector2="H8_cterm" />
+            <DistanceConstraintGenerator name="intra_S4_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H7_mid1"  residue_selector2="H8_mid1" />
+            <DistanceConstraintGenerator name="intra_S4_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H7_mid2"  residue_selector2="H8_mid2" />
+            <!-- Subunit 5 -->
+            <DistanceConstraintGenerator name="intra_S5_far"  function="HARMONIC 12.0 1.5" residue_selector1="H9_nterm" residue_selector2="H10_cterm" />
+            <DistanceConstraintGenerator name="intra_S5_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H9_mid1"  residue_selector2="H10_mid1" />
+            <DistanceConstraintGenerator name="intra_S5_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H9_mid2"  residue_selector2="H10_mid2" />
+            <!-- Subunit 6 -->
+            <DistanceConstraintGenerator name="intra_S6_far"  function="HARMONIC 12.0 1.5" residue_selector1="H11_nterm" residue_selector2="H12_cterm" />
+            <DistanceConstraintGenerator name="intra_S6_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H11_mid1"  residue_selector2="H12_mid1" />
+            <DistanceConstraintGenerator name="intra_S6_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H11_mid2"  residue_selector2="H12_mid2" />
+
+            <!-- ==========================================================
+                 INTER-SUBUNIT CONSTRAINTS (Even vs Odd)
+                 H2-H3, H4-H5, H6-H7, H8-H9, H10-H11
+                 ========================================================== -->
+            <!-- Link 1 (S1-S2) -->
+            <DistanceConstraintGenerator name="inter_L1_far"  function="HARMONIC 12.0 1.5" residue_selector1="H2_nterm" residue_selector2="H3_cterm" />
+            <DistanceConstraintGenerator name="inter_L1_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H2_mid1"  residue_selector2="H3_mid1" />
+            <DistanceConstraintGenerator name="inter_L1_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H2_mid2"  residue_selector2="H3_mid2" />
+            <!-- Link 2 (S2-S3) -->
+            <DistanceConstraintGenerator name="inter_L2_far"  function="HARMONIC 12.0 1.5" residue_selector1="H4_nterm" residue_selector2="H5_cterm" />
+            <DistanceConstraintGenerator name="inter_L2_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H4_mid1"  residue_selector2="H5_mid1" />
+            <DistanceConstraintGenerator name="inter_L2_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H4_mid2"  residue_selector2="H5_mid2" />
+            <!-- Link 3 (S3-S4) -->
+            <DistanceConstraintGenerator name="inter_L3_far"  function="HARMONIC 12.0 1.5" residue_selector1="H6_nterm" residue_selector2="H7_cterm" />
+            <DistanceConstraintGenerator name="inter_L3_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H6_mid1"  residue_selector2="H7_mid1" />
+            <DistanceConstraintGenerator name="inter_L3_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H6_mid2"  residue_selector2="H7_mid2" />
+            <!-- Link 4 (S4-S5) -->
+            <DistanceConstraintGenerator name="inter_L4_far"  function="HARMONIC 12.0 1.5" residue_selector1="H8_nterm" residue_selector2="H9_cterm" />
+            <DistanceConstraintGenerator name="inter_L4_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H8_mid1"  residue_selector2="H9_mid1" />
+            <DistanceConstraintGenerator name="inter_L4_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H8_mid2"  residue_selector2="H9_mid2" />
+            <!-- Link 5 (S5-S6) -->
+            <DistanceConstraintGenerator name="inter_L5_far"  function="HARMONIC 12.0 1.5" residue_selector1="H10_nterm" residue_selector2="H11_cterm" />
+            <DistanceConstraintGenerator name="inter_L5_mid1" function="HARMONIC 11.0 1.0" residue_selector1="H10_mid1"  residue_selector2="H11_mid1" />
+            <DistanceConstraintGenerator name="inter_L5_mid2" function="HARMONIC 11.0 1.0" residue_selector1="H10_mid2"  residue_selector2="H11_mid2" />
+        </AddConstraints>
+
+        <RemoveConstraints name="rm_build_csts"
+            constraint_generators="intra_S1_far,intra_S1_mid1,intra_S1_mid2,intra_S2_far,intra_S2_mid1,intra_S2_mid2,intra_S3_far,intra_S3_mid1,intra_S3_mid2,intra_S4_far,intra_S4_mid1,intra_S4_mid2,intra_S5_far,intra_S5_mid1,intra_S5_mid2,intra_S6_far,intra_S6_mid1,intra_S6_mid2,inter_L1_far,inter_L1_mid1,inter_L1_mid2,inter_L2_far,inter_L2_mid1,inter_L2_mid2,inter_L3_far,inter_L3_mid1,inter_L3_mid2,inter_L4_far,inter_L4_mid1,inter_L4_mid2,inter_L5_far,inter_L5_mid1,inter_L5_mid2" />
+
+        <MinMover name="cenmin" scorefxn="CENTROID" bb="1" chi="0" jump="0" cartesian="0" />
+        <SetSecStructEnergies name="set_ssene1" scorefxn="CENTROID" />
+
+        <BuildDeNovoBackboneMover name="build_bb" dump_pdbs="0">
+            <CompoundArchitect name="twelve_helix_arch">
+                <Architects>
+                    <HelixArchitect name="H1" length="23" /> <HelixArchitect name="H2" length="20" />
+                    <HelixArchitect name="H3" length="23" /> <HelixArchitect name="H4" length="20" />
+                    <HelixArchitect name="H5" length="23" /> <HelixArchitect name="H6" length="20" />
+                    <HelixArchitect name="H7" length="23" /> <HelixArchitect name="H8" length="20" />
+                    <HelixArchitect name="H9" length="23" /> <HelixArchitect name="H10" length="20" />
+                    <HelixArchitect name="H11" length="23" /> <HelixArchitect name="H12" length="20" />
+                </Architects>
+
+                <Connections>
+                    <!-- Intra-subunit Hairpins (spanning 11A) -->
+                    <Connection name="H1_H2" motif="3LX,4LX" segment1="H1" segment2="H2" ideal_abego="1" />
+                    <Connection name="H3_H4" motif="3LX,4LX" segment1="H3" segment2="H4" ideal_abego="1" />
+                    <Connection name="H5_H6" motif="3LX,4LX" segment1="H5" segment2="H6" ideal_abego="1" />
+                    <Connection name="H7_H8" motif="3LX,4LX" segment1="H7" segment2="H8" ideal_abego="1" />
+                    <Connection name="H9_H10" motif="3LX,4LX" segment1="H9" segment2="H10" ideal_abego="1" />
+                    <Connection name="H11_H12" motif="3LX,4LX" segment1="H11" segment2="H12" ideal_abego="1" />
+                    
+                    <!-- Inter-subunit Linkers -->
+                    <Connection name="H2_H3" motif="2LX,3LX" segment1="H2" segment2="H3" ideal_abego="1" />
+                    <Connection name="H4_H5" motif="2LX,3LX" segment1="H4" segment2="H5" ideal_abego="1" />
+                    <Connection name="H6_H7" motif="2LX,3LX" segment1="H6" segment2="H7" ideal_abego="1" />
+                    <Connection name="H8_H9" motif="2LX,3LX" segment1="H8" segment2="H9" ideal_abego="1" />
+                    <Connection name="H10_H11" motif="2LX,3LX" segment1="H10" segment2="H11" ideal_abego="1" />
+                </Connections>
+
+                <Pairing>
+                    <HelixPairing segments="H1,H2" parallel="0" />
+                    <HelixPairing segments="H3,H4" parallel="0" />
+                    <HelixPairing segments="H5,H6" parallel="0" />
+                    <HelixPairing segments="H7,H8" parallel="0" />
+                    <HelixPairing segments="H9,H10" parallel="0" />
+                    <HelixPairing segments="H11,H12" parallel="0" />
+
+                    <HelixPairing segments="H2,H3" parallel="0" />
+                    <HelixPairing segments="H4,H5" parallel="0" />
+                    <HelixPairing segments="H6,H7" parallel="0" />
+                    <HelixPairing segments="H8,H9" parallel="0" />
+                    <HelixPairing segments="H10,H11" parallel="0" />
+                </Pairing>
+            </CompoundArchitect>
+
+            <RemodelLoopMoverPoseFolder scorefxn="CENTROID" />
+
+            <CompoundPerturber>
+                <HelixPerturber architect="H1" /> <HelixPerturber architect="H2" />
+                <HelixPerturber architect="H3" /> <HelixPerturber architect="H4" />
+                <HelixPerturber architect="H5" /> <HelixPerturber architect="H6" />
+                <HelixPerturber architect="H7" /> <HelixPerturber architect="H8" />
+                <HelixPerturber architect="H9" /> <HelixPerturber architect="H10" />
+                <HelixPerturber architect="H11" /> <HelixPerturber architect="H12" />
+
+                <ConnectionPerturber architect="H1_H2" />
+                <ConnectionPerturber architect="H3_H4" />
+                <ConnectionPerturber architect="H5_H6" />
+                <ConnectionPerturber architect="H7_H8" />
+                <ConnectionPerturber architect="H9_H10" />
+                <ConnectionPerturber architect="H11_H12" />
+
+                <ConnectionPerturber architect="H2_H3" />
+                <ConnectionPerturber architect="H4_H5" />
+                <ConnectionPerturber architect="H6_H7" />
+                <ConnectionPerturber architect="H8_H9" />
+                <ConnectionPerturber architect="H10_H11" />
+            </CompoundPerturber>
+
+            <PreFoldMovers>
+                <Add mover="set_ssene1" />
+                <Add mover="build_csts" />
+            </PreFoldMovers>
+
+            <PostFoldMovers>
+                <Add mover="cenmin" />
+                <Add mover="rm_build_csts" />
+            </PostFoldMovers>
+
+            <Filters>
+                <Add filter="geometry" />
+                <Add filter="secstruct_filter" />
+                <Add filter="kink" />
+            </Filters>
+        </BuildDeNovoBackboneMover>
+    </MOVERS>
+
+    <FILTERS>
+        <!-- Constraint Score Filters -->
+        <!-- We relax the threshold to 6.0 for such a massive multi-domain assembly to give the sampler breathing room -->
+        <ConstraintScore name="score_S1" constraint_generators="intra_S1_far,intra_S1_mid1,intra_S1_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_S2" constraint_generators="intra_S2_far,intra_S2_mid1,intra_S2_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_S3" constraint_generators="intra_S3_far,intra_S3_mid1,intra_S3_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_S4" constraint_generators="intra_S4_far,intra_S4_mid1,intra_S4_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_S5" constraint_generators="intra_S5_far,intra_S5_mid1,intra_S5_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_S6" constraint_generators="intra_S6_far,intra_S6_mid1,intra_S6_mid2" threshold="6.0" confidence="1" />
+
+        <ConstraintScore name="score_L1" constraint_generators="inter_L1_far,inter_L1_mid1,inter_L1_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_L2" constraint_generators="inter_L2_far,inter_L2_mid1,inter_L2_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_L3" constraint_generators="inter_L3_far,inter_L3_mid1,inter_L3_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_L4" constraint_generators="inter_L4_far,inter_L4_mid1,inter_L4_mid2" threshold="6.0" confidence="1" />
+        <ConstraintScore name="score_L5" constraint_generators="inter_L5_far,inter_L5_mid1,inter_L5_mid2" threshold="6.0" confidence="1" />
+    </FILTERS>
+
+    <PROTOCOLS>
+        <Add mover="build_bb" />
+        <Add filter="geometry" />
+        <Add filter="omega" />
+        <Add filter="secstruct_filter" />
+        <Add filter="kink" />
+
+        <Add filter="score_S1" />
+        <Add filter="score_S2" />
+        <Add filter="score_S3" />
+        <Add filter="score_S4" />
+        <Add filter="score_S5" />
+        <Add filter="score_S6" />
+
+        <Add filter="score_L1" />
+        <Add filter="score_L2" />
+        <Add filter="score_L3" />
+        <Add filter="score_L4" />
+        <Add filter="score_L5" />
+    </PROTOCOLS>
+
+</ROSETTASCRIPTS>

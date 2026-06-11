@@ -1,0 +1,321 @@
+
+A Complete Study Guide
+Sampling of Structure and Sequence
+Space of Small Protein Folds
+The paper, the terminology, and every line of supplementary code
+Linsky, Noble, Tobin, Crow, Carter, Urbauer, Baker, Strauch
+Nature Communications (2022) 13:7151  ·  DOI 10.1038/s41467-022-34937-8
+Prepared as a grad-level reading + code companion
+
+How to use this guide
+This document is a standalone companion to the paper and its supplementary code repositories. You can read it cover-to-cover, or jump to any section using the table of contents. It is written for a reader who is comfortable with the underlying biochemistry but new to the de novo design vocabulary and to the Rosetta / Bayesian-modelling machinery used here.
+It is organised in three large parts:
+Part I — The science. A plain-language tour of the problem the paper solves, a glossary of every piece of jargon, and a section-by-section walk through the paper itself (abstract through methods).
+Part II — The design code (scaffold_design repo). A file-by-file walkthrough of the Rosetta backbone-generation XMLs, the sequence-design XMLs, the command-line generator, the connectivity feature script, and the random-forest stability classifier.
+Part III — The biophysics code (protease_experimental_analysis repo). The yeast-display proteolysis assay, the Bayesian EC50 model line-by-line with its equations, the fitting driver, and the unfolded-state reference model that turns EC50 into a stability score.
+
+
+
+Contents
+
+PART I
+The Science
+1. The big picture in one page
+Proteins are linear chains of amino acids that fold into specific 3-D shapes. The shape (the fold) determines the function. For decades, structural biologists catalogued the folds that nature happens to use. De novo protein design asks the opposite question: can we design, from scratch, brand-new sequences that fold into a target shape we specify — including shapes nature may never have explored?
+The Baker-lab approach to this has historically relied on blueprints: hand-written files that fix, residue by residue, the secondary-structure string and the backbone torsion bins of the intended fold. Blueprints work, but they are rigid. Every new fold, and often every length variant of the same fold, needs a new hand-crafted blueprint. That is slow and it biases the search toward shapes a human already imagined.
+This paper introduces FoldArchitect (implemented in Rosetta as the BuildDeNovoBackboneMover), a system that replaces the static blueprint with a dynamic, abstract description of a fold. Instead of pinning every residue, you describe a fold as a set of secondary-structure elements (helices, strands), the topological pairings between them (which strand pairs with which, in what orientation), and the loops that connect them — all with ranges and degrees of freedom rather than fixed values. FoldArchitect then samples concrete backbones consistent with that abstract description.
+The engine that makes this tractable is the DivideAndConqueror algorithm. Rather than trying to fold a whole backbone at once (which fails combinatorially), it finds the smallest sub-segment that contains a complete structural unit (a pairing), folds that, then grows outward, re-folding incrementally. When a candidate fails a geometric filter, a Perturber permutes the free parameters — secondary-structure lengths, strand register shifts, backbone torsions, loop connectivity — and tries again.
+With this machinery the authors generated backbones for eight folds: three simple helical folds (a 3-helix bundle 3H, a 4-helix bundle 4H, and a supercoiled variant), three common mixed α/β folds (beta-grasp, ferredoxin, thioredoxin), and two non-natural topologies they call F2 (αββββα) and F4 (βααβββ). After Rosetta sequence design they produced roughly 30,000 designs and ordered genes for them.
+To find out which designs actually fold, they used a high-throughput stability assay: display each protein on the surface of yeast, expose the cells to increasing concentrations of a protease (trypsin or chymotrypsin), and measure how much protein survives. Well-folded proteins resist digestion; unfolded ones get cleaved. Deep sequencing converts survival into a per-design EC50 (the protease concentration at which half the displayed protein is lost), and a Bayesian model turns the noisy sequencing counts into a clean EC50 with error bars. Subtracting a sequence-only unfolded-state prediction gives a stability score. About 6,200 designs scored as stable.
+Two headline results follow. First, they obtained the first de novo, energy-minimized thioredoxin fold (design Thio_802, deposited as PDB 7LDF / BMRB 30844) and solved its solution NMR structure, confirming the intended topology. Second, they trained a random-forest classifier on the stability data — adding novel connectivity / "hub" features that capture how residue contacts are distributed through the structure — that predicts stability with an in-set AUC near 0.9, generalising to an independent dataset at AUC ~0.83.
+
+
+2. Terminology decoder
+This is the section to keep open while you read the paper. Each entry gives the plain meaning first, then the technical detail. Terms are grouped by theme rather than alphabetically, because the concepts build on each other.
+2.1 Protein-structure basics
+
+2.2 The Ramachandran / ABEGO alphabet
+ABEGO is a five-letter code for backbone torsion regions, finer-grained than the H/E/L secondary-structure code. Each letter names a region of the φ/ψ map:
+ABEGO matters because loops with specific ABEGO patterns are far more designable. A motif string like 2LX,3LX,4LX in a Connections block (seen in the backbone XMLs) constrains the loop torsion bins, and ideal_abego tells FoldArchitect to draw loop conformations from a library of well-behaved ABEGO loops rather than arbitrary geometry. ABEGO is what lets the abstract fold description replace the residue-by-residue blueprint: instead of pinning torsions, you specify the allowed ABEGO classes and let the sampler fill in real angles.
+
+2.3 FoldArchitect vocabulary
+
+2.4 Rosetta sequence-design vocabulary
+
+2.5 Stability-assay & modelling vocabulary
+
+
+
+3. The paper, section by section
+This walks the paper in its own order. For each part I give what it claims, then the mechanism behind the claim, so you can read the paper itself with the jargon already unpacked.
+3.1 Abstract & introduction — the gap being filled
+The framing claim is that nature samples only a small fraction of the sequence space that can fold into stable proteins, and that small structural variations within a single fold — sometimes a few amino acids — can redefine function. To engineer new functions (molecular recognition, ideally-shaped binding pockets), you therefore need methods to control and sample shape diversity within a fold, not just hit one exemplar structure.
+The introduction's key technical argument is why existing methods fall short. Classic Rosetta de novo design uses fragment-insertion guided by a blueprint: a chain is folded in silico by inserting PDB-derived fragments carrying a desired ABEGO sequence into an extended chain. This is computationally heavy and scales poorly, because working out the ABEGO sequence that folds a viable backbone needs expert intervention and many manual steps. Worse, any variation — a different secondary-structure length or loop connection — requires a new trajectory and a new blueprint file, and the changes are context-dependent (lengthening one strand may force lengthening its paired strand). That coupling is exactly what makes hand-blueprinting whole fold families impractical.
+Their stated advance: a pipeline that samples topology during each trajectory, without prior knowledge of residue-by-residue features, enabling a diverse representation of a given fold. In other words, the abstract fold description plus DivideAndConqueror replaces the per-residue blueprint.
+
+3.2 FoldArchitect — the computational infrastructure (Fig. 1)
+Figure 1 is the architecture diagram; it is worth understanding in full because the code in Part II is a direct implementation of it.
+The fold-description file (Fig. 1b). The user writes an XML "fold description" that encodes: length ranges of each secondary-structure element and loop; how distance constraints are applied (e.g. harmonic constraints, shown as yellow lines in the figure); register shifts and beta bulges to introduce curvature into β-sheets; and pairings — of helices, of helix-sheet-helix arrangements, sheet orientations, and bulge insertions. Crucially the XML supports "next-to-length" variation and ambiguous distance constraints, so one file describes a whole family of related backbones rather than a single structure.
+ABEGO loop specification (Fig. 1c). Loop connections are specified by their allowed ABEGO regions of the Ramachandran plot directly within RosettaScripts — this is how loop conformational space is described abstractly instead of being frozen in a blueprint.
+The trajectory (Fig. 1a). FoldArchitect takes the user spec, uses the previously-reported fragment-insertion folding protocol to realise a backbone, and filters for geometrically realistic backbone conformations before any sequence is designed. After sequence design, decoys are screened for stability by trypsin/chymotrypsin titration, and — importantly — the information gained from the stable designs is fed back into FoldArchitect, closing a design–test–learn loop.
+
+3.3 The DivideAndConqueror folding algorithm
+This is the engine that makes abstract fold descriptions buildable. Folding a whole backbone from scratch is combinatorially hopeless, so the algorithm proceeds in stages:
+Split the full backbone into the smallest sub-segment that still contains a complete pairing (e.g. two paired strands plus their connecting loop). A complete pairing is the smallest piece whose geometry can be meaningfully checked.
+Fold that sub-segment with the fragment-insertion protocol and check it against the geometric filters.
+Extend: add the next secondary-structure element and re-fold, now in the context of the already-folded segment, so each new piece is chosen to be compatible with what is already built.
+Perturb on failure: if a segment fails its filters, the Perturber permutes the free parameters — SS lengths, register shift, φ/ψ, loop connectivity — and the segment is re-attempted rather than the whole protein being thrown away.
+The payoff (Supplementary Fig. 4) is a diverse set of backbones for a single fold, because the same abstract description, folded incrementally with stochastic perturbation, yields many distinct concrete geometries. For β-containing folds the authors add loose distance constraints to bias sampling toward well-formed sheets, and FoldArchitect automatically generates the strand pairing between neighbouring strands; parallel vs antiparallel direction can be specified by the user. The loop rules build on the ferredoxin design rules of earlier work, augmented with new rules this paper identifies.
+
+3.4 Two sequence-design protocols
+Once a backbone exists, its sequence must be designed. The paper uses two protocols, both implemented in the scaffold_design repo (Part II):
+Protocol 1 — exposure-based rotamer design. Amino acids are sampled by solvent exposure (the LayerDesign idea: hydrophobic core, mixed boundary, polar surface). Design begins with a low repulsive term so that optimal side-chain interactions are found first; as the repulsive term ramps up, clashes are relieved while the strongest interactions survive. This is the standard FastDesign ramping strategy.
+Protocol 2 — pair-motif design. Before the same rotamer-based step, the protocol first installs residue pair-motifs — side-chain pairings observed in high-resolution crystal structures of natural proteins — to design the core. This seeds realistic core packing, reduces compute time, and substantially improved the success rate for 3-helix bundles (Supplementary Fig. 6), likely because the motif library is drawn heavily from larger helical protein–protein interfaces. Each final design has a unique 3-D conformation and a sequence predicted to be near-optimal for it.
+
+3.5 High-throughput stability screen (Fig. 2)
+To measure which of ~30,000 designs actually fold, the authors use the yeast-surface-display protease assay (the Rocklin et al. method):
+Display. Each design is expressed on the yeast surface, fused so it carries a c-Myc tag that can be fluorescently labelled. If the protein is intact, an anti-c-Myc antibody conjugated to FITC labels the cell; if the protein has been cleaved off, no label.
+Titrate. The pooled cells are incubated with increasing concentrations of trypsin (and separately chymotrypsin). Folded proteins resist; unfolded ones are cleaved and lose their fluorescence.
+Sequence. Cells are sorted by fluorescence and deep-sequenced at each protease concentration, giving per-design read counts versus protease level.
+Fit EC50. A Bayesian model (Part III) converts the counts into an EC50 — the protease concentration at which half the protein is lost — with credible intervals.
+Calibrate with a ladder. A "stability-score ladder" of previously-characterised proteins with known stability scores is spiked into the pool to adjust for differing protease activities between trypsin and chymotrypsin (chymotrypsin is scaled by a factor of 3.5).
+The success rate of each fold is the fraction of its designs with stability score > 0.5 (Fig. 2d,e). The three helical bundles showed the highest success rates (consistent with prior work). Strikingly, the invented folds F2 and F4 had higher success rates than the natural α+β folds; thioredoxin and the supercoiled coil 4H bundle had the lowest — plausibly because they have fewer secondary-structure contacts, a smaller core, and an extra loop, leaving less margin for error.
+
+3.6 Biochemical validation of individual designs (Fig. 3)
+Beyond the high-throughput screen, a subset of designs was expressed, purified and characterised in solution:
+Oligomeric state (SEC). Size-exclusion chromatography showed most folds behaved as expected, but some — notably F2/F4 and one misfolded design — were largely dimeric, with monomer and dimer fractions not in equilibrium (they stayed put for days), suggesting domain-swapped dimers rather than designed monomers.
+Secondary structure (CD). Circular-dichroism spectra at 25 °C, 95 °C and after cooling assessed secondary-structure content and refolding. Comparing experimental spectra to PDBMD2CD predictions, 15/19 matched the predictions. The exceptions (bGM_166, bGM_649.2, F4M_256, and the deliberately-unstable control ThioFL24) were likely misfolded.
+Fold beyond secondary structure (1H NMR). 1-D proton NMR on four designs confirmed they formed genuinely structured (not molten-globule) conformations.
+Thermostability. Melting curves (MRE at 220 nm vs temperature) for eight designs showed them either stable at high temperature or able to refold after denaturation.
+Structure prediction. ColabFold/AlphaFold2 (run without an MSA, since these are de novo sequences) predicted the intended topology for all folds to within 0.4–3 Å, except Thio_330 and bG-518.1.
+
+3.7 Evaluating fold families & shape diversity
+The paper then shows that within each fold there is real local plasticity — the whole point of the method. For both stable and unstable designs of each fold, they measured geometric descriptors: distances between SS elements, register shifts, dihedrals of the outer β-strands (sheet curvature), dihedrals between adjacent SS elements, inter-helix distances, and helix angles given specific loop φ/ψ. The spread of these values demonstrates each fold occupies a region of shape space rather than a single point, validating the design rules and revealing new ones (Fig. 2, Suppl. Figs. 14–18).
+Specific fold notes worth knowing:
+Ferredoxin. Previous attempts at very small ferredoxins failed (unfolded). By extensively sampling SS lengths and registers, the authors found a geometric limitation rooted in the required right-handed strand-helix-strand motif, but still designed stable variants as small as 55 residues.
+Coil (supercoiled 4H). A 4-helix-bundle variant that alternates shorter and longer helices, using distance constraints to guide supercoiling. Designing these revealed loop-connection and helix-angle rules that were then folded back into the platform.
+F2 (αββββα) and F4 (βααβββ). Non-natural topologies. They expressed well and were stable against proteolysis, but tended to dimerize — likely because their linear SS connectivity (no interweaving strand swap) makes domain-swapped dimers easy. Thioredoxin, by contrast, has a β2–β3 strand swap that interweaves its strands and resists swapping. The authors note F2/F4 might be monomerised with disulfides or negative design against the dimer.
+
+3.8 A de novo minimized thioredoxin fold (Fig. 4)
+This is the structural headline. Natural thioredoxin is a three-layer β/α sandwich: a central five-stranded sheet flanked by two α-helices on each side. Its conserved core splits into an N-terminal βαβ motif and a C-terminal ββα motif, usually joined by a small helix (α0 / α2). The βαβ element is the connecting motif that lets the alpha/beta superfamily expand its domain space — which is exactly why being able to design it with shape diversity is valuable for building larger folds.
+The authors designed a minimized thioredoxin: only the core four sheets and two (parallel or antiparallel) helices, replacing the common α2 helix with an extended L3 loop (Fig. 4g). They solved the solution NMR structure of design Thio_802 (deposited as PDB 7LDF, BMRB 30844). The NMR ensemble agrees with the design model: top-structure RMSD 1.9 Å over Cα (deviations mostly in the last helix), with all β-strands very close to the model at 1.1 Å Cα RMSD — making this the first accurately de novo designed thioredoxin fold. Figure 4h additionally shows that several L3 loop conformations (by ABEGO sequence) can yield a stable protein, and Fig. 4i shows interdependence of structural factors (helix midpoint distances, helix dihedrals, opening angles) — i.e. the fold's parameters are correlated, not independent.
+
+3.9 A single machine-learning model to identify stable designs (Fig. 5)
+With a large, diverse set of stable and unstable proteins, the authors trained a Random Forest classifier to predict whether a small protein is stable. The model uses 110 sequence- and structure-based features. Beyond the physical/statistical features used in prior work, they added features describing residue interaction networks and the energetic contributions of individual amino acids within tightly connected hubs.
+The single most predictive of the new features was the overall energy contribution of the most connected residue. Residues that contact many others are interaction hubs — generally highly buried, providing the "glue" of the hydrophobic core — so favourable energetics there is essential for core formation, while clashes there cause instability. Consistent with the earlier Rocklin study, the single most predictive feature overall is correct local geometry (alignment with short structural fragments), followed by the number of hydrophobic residues in the core.
+The key methodological advance is training one model across multiple folds instead of one fold at a time. To test generalisation honestly they use fold dropout: omit one fold entirely, train on the rest, and predict the held-out fold (Fig. 5a–c). The classifier predicts stability even for unseen folds. On the independent Rocklin et al. dataset it reached an AUC ≈ 0.83 with the single classifier; in-set performance is near 0.9. The diverse scaffold set is what lets the model learn general fold descriptions rather than overfitting one topology.
+Implementation details from the Methods: scikit-learn RandomForest, 500 trees, gini criterion, bootstrapping with out-of-bag generalisation estimate, fivefold cross-validation. The Gini index for a node is
+Gini = 1 − Σ (Pi)²   (sum over classes i)
+
+3.10 Discussion — what is new and what it enables
+The discussion contrasts this work with prior de novo design, which simulated a handful of folds using elaborate blueprint-based protocols with manual multi-step assembly and verified only a few designs in solution. This paper instead provides a versatile fold-assembly and design pipeline that dynamically samples a fold during the folding trajectory, evaluates thousands of designs at once, and reveals geometric diversity. It extracted new design rules (e.g. helical loop connectors) that were folded back into the algorithm and are accessible in any Rosetta design step, and produced a simple stability-prediction model to help future design. Everything runs in the RosettaScripts XML framework, so the features are usable without programming. The work also yields an extensive scaffold database — already used downstream for picomolar COVID-19 inhibitors and binders against FGFR2, TrkA, IL7Rα, and VirB8 with co-crystal-confirmed accuracy.
+
+3.11 Methods — the three design steps & assay details
+The Methods formalise the pipeline as three steps, all in RosettaScripts XML (repo: strauchlab/scaffold_design):
+Backbone design — the FoldArchitectMover with its sub-architects, pose folder, filters and perturber, run via DivideAndConqueror. Folds are realised by inserting PDB-curated structured fragments (with the architect-determined ABEGO sequence) into an extended poly-valine chain.
+Sequence design — two protocols (vanilla exposure-based, and pair-motif), filtered on omega/rama angles first, then on local geometry, average degree of connectivity (packing), Rosetta scores and more.
+Selection — designs chosen by filter terms and computed energies; per fold, 2,000–12,000 finished models were generated and scored (rescore15.xml / rescore16.xml plus enhanced_score.sc terms).
+Notable mechanistic details to carry into the code reading:
+NamedSegment selector tracks each element's residue numbering so distance constraints can be assigned before the final lengths are known.
+DistanceConstraintGenerator applies harmonic or bounded-harmonic constraints with a loose σ = 2 Å; the default starting helix–sheet distance is 8 Å, adjusted per fold (e.g. 9 Å between the helix C-terminus and second sheet in beta-grasp).
+Helix "kink" filter restricts helix curvature, generally to less than 15° of bend.
+BetaSheetArchitect defines sheets spatially by the face of the sheet (not N→C order), auto-adds strand pairings, and only builds sheets with no unpaired residues.
+Assay specifics: cells labelled with anti-c-Myc-FITC, sorted on a Sony SH800 by FSC/BSC gating then fluorescence; DNA encoded with DNAworks2.0 / ecoli2 codons; classifier fit under Python 2.7 / Anaconda2 / scikit-learn.
+
+PART II
+The Design Code  ·  scaffold_design
+4. Map of the scaffold_design repository
+The GitHub repo strauchlab/scaffold_design holds the design half of the pipeline. The pieces you will actually read:
+
+5. Backbone generation XMLs — FoldArchitect in practice
+Every backbone XML has the same skeleton: a centroid score function, residue selectors (including NamedSegments), filters, and a BuildDeNovoBackboneMover containing the architects, connections, pairings, perturber, pose folder, and pre/post-fold movers. We read the 3-helix bundle XML in full because the others are variations on it.
+5.1 design pattern of 3h-bb-generation.xml
+Score function — centroid
+3h-bb-generation.xml — SCOREFXNS
+
+fldsgn_cen is the fold-design centroid energy function: coarse-grained, side chains as pseudo-atoms, tuned for backbone generation. The reweights turn on the terms that matter while folding an abstract spec: long- and short-range backbone hydrogen bonding (hbond_lr_bb, hbond_sr_bb) to form real secondary structure; the four constraint terms (atom_pair, coordinate, angle, dihedral, backbone_stub) so the distance/pairing constraints from the fold description are actually felt by the energy; and omega/rama to keep backbone torsions physically legal. This is the energy the pose folder minimises against.
+Residue selectors — NamedSegment is the key idea
+3h-bb-generation.xml — RESIDUE_SELECTORS
+
+NamedSegment is the selector the Methods call out specifically. Because the backbone is built dynamically, you do not know final residue numbers in advance — so you refer to "residue 5 of helix H2" or "the last three residues of H2" (negative indices count from the C-terminus). This is what lets distance constraints and filters target the right residues even though lengths are still being sampled. loops/not_loops simply partition the structure into loop vs structured residues for the secondary-structure filter.
+The BuildDeNovoBackboneMover — the heart
+3h-bb-generation.xml — the mover (abridged)
+
+Read this block as the literal encoding of the FoldArchitect architecture from Fig. 1:
+Architects — three HelixArchitects, each a helix whose length may be 17, 18 or 19 residues (length="17:19"). This range is the "abstract" part: the sampler chooses the actual length per trajectory. This is a 3-helix bundle (3H).
+Connections — two loops, H1→H2 and H2→H3. The motif="2LX,3LX,4LX" offers loop options of length 2, 3 or 4 (L = loop, X = any ABEGO), and ideal_abego="1" draws them from the library of well-behaved ABEGO loops rather than arbitrary geometry.
+Pairing — declares which helices pack against which and their orientation: H1–H2 antiparallel (parallel="0"), H1–H3 parallel, H2–H3 antiparallel. These pairings are what DivideAndConqueror uses to find the smallest complete sub-segment, and what the HelixPairing filter later checks.
+RemodelLoopMoverPoseFolder — the pose folder: the engine that closes loops and realises real 3-D coordinates from the abstract spec, scoring against CENTROID.
+CompoundPerturber — on filter failure, the HelixPerturbers re-sample helix lengths and the ConnectionPerturbers re-sample loop connectivity, then folding is retried. This is the perturb-and-retry loop in code.
+PreFold/PostFold movers — set_ssene1 (SetSecStructEnergies) primes the score function with the intended SS before folding; cenmin (a centroid MinMover) relaxes the backbone after fragment insertion but before any switch to full-atom.
+Filters (inner) — geometry and secstruct_filter gate each sub-segment as it is built; failing structures trigger the perturber.
+Finally the <PROTOCOLS> block runs the mover and then applies the outer filters — geometry, secstruct_filter, kink (helix bend < 15°), and helix_pairs (HelixPairing) — to the finished backbone:
+3h-bb-generation.xml — PROTOCOLS
+
+
+5.2 Adding β-sheets — betagrasp-bb-generation.xml
+The beta-grasp XML introduces everything new about β-folds: the BetaSheetArchitect, StrandArchitects, explicit distance constraints, and sheet-specific filters. The architect block:
+betagrasp-bb-generation.xml — architects
+
+BetaSheetArchitect assembles four strands into one sheet. Per the Methods it defines the sheet spatially, by the face of the sheet (not N→C order), auto-generates the strand pairings, and only builds sheets with no unpaired residues.
+orientation="U"/"D" — whether each strand points "up" or "down" relative to the sheet face, setting the antiparallel/parallel pattern.
+register_shift — slides a strand along its partner. register_shift="-1,-2" on E4 lets the sampler try two different registers; this is the strand-alignment degree of freedom the paper measures as shape diversity.
+length — fixed (E2 = 7) or ranged (E1/E3/E4 = 5:7).
+bulge — inserts an extra unpaired residue to curve the sheet. bulge="2" puts a bulge at position 2 of E3; bulge="%%b%%" on E2 is a RosettaScript variable filled in at run time by make_commandline.py (it sweeps the values 2, 4, 5), so one XML generates several bulge variants.
+Constraints are added as PreFold movers and removed afterward:
+betagrasp-bb-generation.xml — constraints
+
+SheetConstraintGenerator lays down the H-bond/geometry restraints that hold a proper sheet together. The two DistanceConstraintGenerators pin the helix to the sheet: HARMONIC 8.0 2 means a harmonic restraint with a target distance of 8 Å and σ = 2 Å (the loose 2 Å the Methods describe); the second uses 9 Å — exactly the beta-grasp helix-to-second-sheet adjustment mentioned in the Methods. Critically these reference NamedSegment selectors (H1_nterm, E4_nterm), so they work even though final residue numbers aren't known until the strands are built. The matching RemoveConstraints strips them after folding so they don't bias later steps, and ConstraintScore filters report how well each restraint was satisfied.
+The β-specific filters — SheetTopology, HSSTriplet (helix-strand-strand triplet within ±45°), plus the usual geometry/secstruct/kink — gate the sheet. Note the empty <Pairing> block: for sheets the BetaSheetArchitect generates the strand pairings automatically, so they need not be declared by hand.
+
+5.3 The other fold XMLs at a glance
+All remaining backbone XMLs reuse these same parts; only the architect/pairing recipe changes:
+6. make_commandline.py — orchestrating the trajectories
+This small Python-2 script writes the list of Rosetta command lines that actually run the backbone XML. It exists because each design trajectory must run in its own folder (Rosetta writes temporary output), and because the bulge variable must be swept.
+make_commandline.py (abridged)
+
+Reading it: it loops over 10 folders × 3 bulge values = 30 commands. Each command cds into a numbered folder (0000…), runs rosetta_scripts on the chosen XML with -nstruct 100 (100 backbones per command), passes the bulge value via -parser:script_vars b=<i> (this is what fills %%b%% in the strand architect), tags outputs with the folder id, and writes everything to a commands file you can submit to a cluster. xml_vars_to_str simply formats each variable as a -parser:script_vars name=value token. To target a different fold you change the xml path and, if needed, the variable arrays — nothing else.
+
+
+7. Sequence design XMLs — turning a backbone into a sequence
+After a backbone passes its filters, these XMLs assign an amino-acid sequence. There are two, matching the paper's two protocols.
+7.1 design_monos.fix.xml — the vanilla (exposure-based) protocol
+Score functions — one energy, many repulsive weights
+The header defines several beta_nov15 score functions that differ mainly in their fa_rep (repulsive) weight: sfx_norep sets fa_rep=0.05 (soft), sfx_hard is full strength. This is the ramped-repulsion idea from the paper: design first under a soft repulsive term to find the best side-chain interactions, then harden it to relieve clashes while keeping the strongest contacts. A beta_nov variant adds aa_composition with aa_composition_setup_file="%%aa_comp%%" — the composition penalty file (e.g. ala_trp_met.comp) passed in as a script variable. SFXN2/score3 centroid functions and a beta_cart Cartesian function are used for interleaved minimisation.
+Task operations — who may become what
+These constrain the design choices per residue:
+LayerDesign (layer_all, layer_core_*) — classifies each residue as core / boundary / surface by sidechain-neighbour count (core=3.5, surface=1.8) and restricts the allowed amino acids accordingly (hydrophobic in the core, polar on the surface). This is the exposure-based sampling the paper describes.
+ConsensusLoopDesign — restricts loop residues to identities favoured for that loop's ABEGO type, improving foldability.
+DisallowIfNonnative (disallow_aas="CG" core, "CGP" surface), LimitAromaChi2, RestrictToRepacking, IncludeCurrent — housekeeping rules that forbid problematic residues (Cys/Gly/Pro where unwanted), cap aromatic rotamers, and keep the current rotamer as an option.
+Filters — the quality gate (Methods 'enhanced_score' terms)
+This XML is where most of the paper's stability filter terms live. The important ones:
+Movers & protocol — FastDesign inside a LoopOver
+design_monos.fix.xml — movers (abridged)
+
+The logic: FastDesign is the core operation — it alternates rounds of sequence/rotamer design with backbone minimisation under ramping repulsion, here for 2–3 repeats, using the LayerDesign + ConsensusLoopDesign task operations. The build ParsedProtocol chains DSSP (recompute secondary structure), repack, minimise, FastDesign, minimise, repack, minimise, FastDesign — a full design+relax cycle. LoopOver runs that whole cycle up to 3 iterations, stopping when the structure passes the combined filter (a CompoundStatement AND-ing the key quality filters: ss_has_core, total_score_cen, pack, AlaCount, unsat_hbond, degreeB, np_res, score_per_res, fa_atr_per_res). FAIL_DO_NOT_RETRY means a design that can't pass is dropped rather than retried forever.
+The <PROTOCOLS> block then runs the sequence: pre-filter on omega geometry; add coordinate constraints (add_cst); a constrained FastDesign (fastdes_cst); the lover design loop; then a long battery of scoring filters whose values are written out for design selection (these are the columns the rescore step and classifier consume).
+
+7.2 design_monos.motif.xml — adding pair-motifs
+The pair-motif protocol is the same XML with one extra step inserted before design. The only substantive additions:
+design_monos.motif.xml — the added motif step
+
+SchemePlaceMotifs installs pair-motifs — pairs of interacting side chains observed in high-resolution crystal structures — into the core before FastDesign runs. The library is the binary file xs_bb_ss_AILMVWYF_sf5_std.rpm.bin.gz (restricted to the hydrophobic set A,I,L,M,V,W,Y,F). Placing realistic side-chain pairs first seeds a good core, cuts compute time, and — per the paper — substantially raised the 3-helix-bundle success rate because the motifs come largely from helical interfaces. The motif XML also adds a couple of extra diagnostics (a BuriedUnsatHbonds buns3, optional Holes), but the design machinery (LayerDesign, FastDesign, LoopOver, filters) is otherwise identical to the vanilla protocol.
+
+
+7.3 The aa_composition file (ala_trp_met.comp)
+Referenced via aa_composition_setup_file="%%aa_comp%%", this plain-text file holds PENALTY_DEFINITION blocks that penalise the global counts of specific residues — caps on Met, Ala, Thr, His — so designs don't over-use a cheap residue. The aa_composition score term turns these into an energy the FastDesign step minimises, keeping composition realistic.
+8. evaluate_connectivity.py — the new 'hub' features
+This PyRosetta script computes the connectivity features the paper found so predictive. Conceptually it builds a residue-contact graph for each design and summarises how the contacts — and the energies of the most-connected residues — are distributed. Output is score3_simple.csv, one row per design, which is later merged into the classifier's feature table.
+Step 1 — build the contact graph
+evaluate_connectivity.py — contact graph
+
+For every residue pair it measures the distance between neighbour atoms (nbr_atom(), a representative side-chain atom) and records a contact if they are within 6 Å. The dict con is the contact graph: con[i] is the neighbour list of residue i. A small Graph helper class (defined at the top) wraps this dict to compute graph-theoretic quantities like density.
+Step 2 — find the interaction hub and its energy
+evaluate_connectivity.py — the hub
+
+The most-connected residue is the interaction hub. Its Rosetta total energy (most_conRE) is the single most predictive of the new features: a hub is highly buried and forms the core's 'glue', so its energy being favourable (or not) strongly signals stability. most_conREn normalises that energy by the residue index/count.
+Step 3 — distribution & 'bad hub' penalties
+Looping over all residues, the script accumulates several summaries (a residue counts as well-connected when it has more than 6 contacts; a residue is 'bad' when its energy is worse than −0.25):
+bad_hub_penalty — penalises residues that are highly connected and poorly scoring (a clash buried in the core). A buried hub that scores badly is exactly the instability signature.
+*highly_conREsum / _pres / Norm / Norm_pres** — sum of energies of all well-connected residues, raw and per-residue-normalised, with and without dividing by connection count.
+*avgE_top_conResidues / Norm** — average energy of the few most-connected residues.
+graph_density — edges over possible edges (from the Graph class): how interconnected the fold is overall.
+avg_con / median_con / max_con — mean, median and maximum number of contacts per residue.
+num_bad_res — count of residues with energy worse than −0.25.
+The 14 features are written to score3_simple.csv:
+evaluate_connectivity.py — output
+
+
+
+9. Re-scoring (rescore.xml / rescore16.xml)
+These short RosettaScripts take finished designs and apply the full filter battery purely to report values — they do not redesign. They regenerate the score columns (PackStat, BuriedUnsat, AverageDegree, fragment lookup, per-residue energies, etc.) consistently across all designs so the numbers are comparable. Their output, combined with the connectivity CSV and the EC50/stability scores, forms the feature matrix the classifier reads. The Methods refer to these as rescore15.xml/rescore16.xml plus the enhanced_score.sc terms.
+10. classifier_for_stabilitypredictions.ipynb — the Random Forest
+The notebook trains the stability classifier and evaluates it on an independent dataset. It is short; the logic is what matters.
+Inputs and the stability label
+classifier notebook — data + label
+
+sc16_combined_all.csv is the merged feature table (Rosetta rescore terms + the connectivity CSV + measured stability). The label is binary: a design is stable only if both its trypsin and chymotrypsin stability scores exceed 0.5 — the two-protease requirement, in code. The independent rocklin_combined_scores_21.csv (the earlier Rocklin et al. dataset) is labelled the same way for the generalisation test.
+The feature list — 110 terms, old and new
+The terms list enumerates ~110 features the trees may use. They fall into three groups: standard Rosetta energy terms (total_score, fa_atr, fa_elec, hbond_*, fa_dun_*, rama_prepro, ref, …); structural/packing descriptors (pack, holes, cavity, unsat_hbond, np_res, percent_core_SCN, the fragment-quality terms worstfrag/worst6frags/sum_best_frags, the hydrophobic-cluster terms, abego_res_profile, …); and — the paper's contribution — the connectivity/hub features from evaluate_connectivity.py: most_conRE, most_conREn, graph_density, bad_hub_penalty, highly_conREsum*, avgE_top_conResidues*. Commented-out lines (e.g. fa_rep, omega) show features deliberately excluded in favour of per-residue versions.
+Training and evaluation
+classifier notebook — train/evaluate
+
+The classifier is 500 trees, OOB scoring on, matching the Methods. The function holds back 15% of the training data to draw the ROC curve and compute the in-set AUC (~0.9), and separately predicts on the independent Rocklin set (AUC ≈ 0.83, plotted as the 'Rocklin set' curve in Fig. 5a). feature_importances_ ranks the features; a later cell rescales them to a percentage of the maximum and keeps those above fi_threshold = 10 — this is how the paper identifies most_conRE (the hub energy) and the fragment-quality term as the top predictors.
+The fold-dropout experiment in Fig. 5 (train on all folds but one, predict the omitted fold) is run by calling this same train/predict function with the held-out fold as df2, demonstrating the single model generalises to unseen folds. The combine_scores.ipynb notebook is the upstream step that joins the per-design CSVs (rescore terms + connectivity + EC50/stability) into the sc16_combined_all.csv the classifier reads.
+
+
+PART III
+The Biophysics Code  ·  protease_experimental_analysis
+11. Map of the protease_experimental_analysis repository
+This repo turns raw sequencing counts from the yeast-display protease screen into the EC50 and stability values that label every design. It is the implementation of the Rocklin et al. assay model.
+
+12. The assay, conceptually, before the code
+Each design is displayed on yeast and exposed to a series of protease concentrations indexed by a selection level. As concentration rises, more of an unstable protein is cleaved off. If you knew, for each design, the fraction surviving at each level, you could read off its EC50 (the level at which half is cleaved). But you do not observe fractions directly — you observe sequencing counts: how many reads each design got in the surviving (selected) population at each level. The model's job is to infer the EC50 (a latent parameter per design) that best explains those noisy counts, with a credible interval.
+Two facts make this a proper statistical model rather than a curve fit: counts are multinomial (the survivors are a draw over all designs competing for a fixed number of reads), and the total number of survivors at each level is binomial (a fraction of the input population). The model writes down both likelihoods and finds the EC50 vector by MAP optimisation.
+
+13. protease_sequencing_model.py — the EC50 model line by line
+13.1 Response functions — how survival depends on EC50
+A SelectionResponseFn defines the fraction of a protein that survives (is selected) at a given protease level, as a function of its EC50. The model used in the paper is NormalSpaceErfResponse:
+protease_sequencing_model.py — Eq. 10
+
+This is Eq. 10. Read it physically: sel_level - sel_ec50 is how far the current protease concentration is above the protein's EC50, on a log scale; conc_factor ** (...) converts that to the actual fold-concentration because protease levels are spaced by conc_factor. When the level is well below EC50 the bracket is negative, erf is ≈ −1, and survival (1 − erf)/2 ≈ 1 (nothing cleaved); well above EC50 it saturates to 0 (all cleaved). sel_k (K_sel) sets the steepness of the transition. The erf (rather than logistic) form encodes pseudo-first-order proteolysis kinetics in 'normal space'. A LogisticResponse and a NormalSpaceLogisticResponse are provided as alternatives but the paper uses the erf form.
+13.2 FractionalSelectionModel.build_model — the likelihood (Eqs. 11–15)
+FractionalSelectionModel (a traitlets.HasTraits) builds a PyMC3 model. Configurable traits include the response function, min_selection_mass, min_selection_rate, sel_k, and the number of outlier_detection_opt_cycles. The latent EC50 is a uniform prior over the observed concentration range:
+build_model — the EC50 prior
+
+Then, looping over every protease level (the 'rounds', summed as in Eq. 15), it builds the likelihood:
+build_model — Eqs. 11-15
+
+Mapping the code to the equations:
+Eq. 11 — Frac_sel_star mixes the survival fraction with a floor min_selection_rate (the 'a' term), so even fully-cleaved proteins keep a tiny non-zero survival probability (avoids zero-probability crashes and models background).
+Eq. 12 — P_in * Frac_sel_star, normalised to sum to 1, gives P_cleave: the probability that a given surviving read belongs to each design. The T.clip(..., min_selection_mass, 1) guards against exact zeros.
+Eq. 13 — the observed selected counts at this level are Multinomial with those probabilities. This is the main likelihood tying EC50 to the data.
+Eq. 14 — the total number of survivors is Binomial with population-level survival Frac_sel_pop, capturing how much of the whole pool made it through.
+Eq. 15 — the full log-likelihood is the sum over all rounds/levels (the for pidx, pkey in enumerate(...) loop).
+
+13.3 Fitting and credible intervals
+protease_sequencing_model.py — MAP fit
+
+optimize_params finds the maximum-a-posteriori EC50 vector with L-BFGS-B (not full MCMC sampling — fast enough for tens of thousands of designs). Supporting methods add robustness and uncertainty: opt_ec50_cred_outliers re-optimises while down-weighting outlier rounds (the outlier_detection_opt_cycles trait), ec50_logp_trace profiles the log-posterior along the EC50 axis for one design, and estimate_ec50_cred reads off a credible interval from that profile — the error bars on each design's EC50. A FlatNormal distribution and a generate_data method (for simulating test data) round out the file; the TestFractionalSelectionModel unittest checks the fitted EC50 recovers known values within 30%.
+14. data/__init__.py — from raw counts to model input
+Before the model can run, the raw files must be shaped into the model_input dict the model expects. experiments.csv describes each sorting round (which .counts column, its parent population, selection strength, concentration factor, fraction collected); each *.counts file holds the per-design read counts.
+data/__init__.py — building model_input
+
+So each round becomes a record with its parent, selection_level, conc_factor, population survival fraction Frac_sel_pop, and the integer survivor counts P_sel per design. These are exactly the fields build_model consumes (P_in comes from the parent's P_sel, Frac_sel_pop feeds Eq. 14, conc_factor and selection_level feed Eq. 10). This file is the bridge between the wet-lab sequencing output and the Bayesian model.
+
+15. fit_all_ec50_data.py — the driver
+This script fits EC50 for every dataset with the paper's chosen hyper-parameters:
+fit_all_ec50_data.py (abridged)
+
+It iterates over four rounds each of trypsin and chymotrypsin (plus site-saturation ssm2 libraries), builds the model on that dataset's input, optimises EC50 with 3 outlier-rejection cycles, and writes a tab-separated *.fulloutput file per dataset. Each output row carries the per-design EC50, its 95% credible interval (ec50_95ci_lbound/ubound), the observed/predicted/downsampled counts per round, and per-round log-likelihood deltas (delta_llh) that flag designs the model fits poorly. These EC50 values, after the trypsin/chymotrypsin calibration (chymotrypsin scaled by 3.5) and ladder adjustment, are the measured stability numbers.
+
+16. The unfolded-state model & the stability score
+A high EC50 alone does not prove a fold is stable — a sequence simply poor in protease cut-sites resists digestion regardless of structure. To correct for this, the paper predicts the EC50 the unstructured sequence would show and subtracts it.
+16.1 sequence_protease_susceptibility.py — CenterLimitedPSSMModel
+sequence_protease_susceptibility.py (schematic)
+
+This is a position-specific scoring matrix (PSSM) model implemented in Theano. It encodes each sequence as integers (21 amino-acid classes), slides a window of size 2·flanking_window + 1 over it, and scores every position with two learned PSSMs: P1_PSSM for the residue at the scissile (cut) position and outer_PSSM for the flanking residues. Summed appropriately, this predicts how susceptible an unfolded chain of that sequence is to the protease — i.e. its baseline EC50. It is a scikit-learn-style estimator (fit/predict) so it can be trained on data where structure is absent. fit_unfolded_state_model.py trains it; model_prediction.py applies it.
+16.2 Forming the stability score
+
+This closes the loop between the two repositories: protease_experimental_analysis produces the trypsin and chymotrypsin stability scores; combine_scores.ipynb in scaffold_design merges them with the Rosetta rescore terms and the connectivity features into sc16_combined_all.csv; and the random-forest notebook learns to predict that stability label from structure alone.
+
+17. The whole pipeline, end to end
+Putting both repositories together, here is the full design–test–learn loop the paper implements:
+Describe the fold. Write a backbone XML (*-bb-generation.xml): architects with length ranges, connections with ABEGO motifs, pairings with orientations. This is the abstract fold description that replaces a blueprint.
+Generate backbones. make_commandline.py launches thousands of BuildDeNovoBackboneMover trajectories. DivideAndConqueror folds each fold incrementally, the Perturber repairs filter failures, and geometric filters keep only realistic backbones.
+Design sequences. design_monos.fix.xml (exposure-based) or design_monos.motif.xml (pair-motif-seeded) run FastDesign + LayerDesign inside a LoopOver, filtering on packing, buried-unsats, fragment quality and per-residue energy. ~30,000 designs result.
+Score & featurize. rescore*.xml regenerates comparable score columns; evaluate_connectivity.py adds the hub/connectivity features. combine_scores.ipynb merges everything into one feature table.
+Test experimentally. Genes are synthesised, displayed on yeast, and titrated with trypsin and chymotrypsin; NGS counts are produced at each concentration.
+Fit EC50. data/__init__.py shapes the counts; fit_all_ec50_data.py runs the Bayesian FractionalSelectionModel (Eqs. 10-15) to get each design's EC50 with credible intervals.
+Compute stability score. The unfolded-state PSSM model predicts each sequence's baseline EC50; stability score = measured − predicted, required > 0.5 for both proteases. ~6,200 designs pass.
+Learn. The random-forest classifier learns to predict stability from structure (AUC ~0.9 in-set, ~0.83 on the independent Rocklin set), and newly-discovered design rules (loop connectors, helix angles) are fed back into FoldArchitect — closing the loop.
+
+
+18. Master glossary (quick reference)
+19. Key-file reference
+Where to look when you want to read the actual source:
+
+20. Reading order suggestion
+If you are working through the real material alongside this guide, a comfortable order is: read Sections 1-3 here, then skim the paper itself (abstract, then Fig. 1, then results). Next read Section 5 here and open 3h-bb-generation.xml side by side, then betagrasp-bb-generation.xml. Move to the sequence-design XMLs with Section 7. Then read Sections 13-16 here while opening protease_sequencing_model.py at the NormalSpaceErfResponse and build_model functions — the equation comments in the code match this guide's Eq. 10-15. Finish with the classifier notebook and Section 17's end-to-end recap. Keep Sections 2 and 18 (the glossaries) open throughout.
+— End of guide —
+Paper: Linsky et al., Nature Communications (2022) 13:7151 · PDB 7LDF · BMRB 30844 · code: github.com/strauchlab/scaffold_design

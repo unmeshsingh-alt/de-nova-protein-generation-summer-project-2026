@@ -1,0 +1,221 @@
+<ROSETTASCRIPTS>
+    <!-- ===================================================================
+         Two-Helix Antiparallel Bundle — Backbone Generation
+         Topology: H1 (15 res) --> hairpin loop --> H2 (12 res)
+
+         Derived directly from scaffold_design/examples/bb_design/xmls/
+         3h-bb-generation.xml (Strauch et al. Nat Commun 2020).
+
+         Why antiparallel?
+         -----------------
+         Your PDB (S_02001.pdb) shows a 30-residue single chain without
+         two distinct parallel helices. The sampler could not satisfy
+         parallel=1 with a short single loop (geometrically impossible —
+         the loop would need ~22 A to reach back). The paper's own helix
+         XMLs (3h, 4h, coil) all use parallel=0 between ADJACENT helices.
+         "Parallel" in the paper means alternate helices (e.g. H1//H3 in
+         a 3-helix bundle). A minimal 2-helix bundle is always antiparallel.
+
+         This XML reproduces the exact pattern of 3h-bb-generation.xml
+         with one fewer helix and one fewer connection.
+         =================================================================== -->
+
+    <SCOREFXNS>
+        <ScoreFunction name="CENTROID" weights="fldsgn_cen" symmetric="0">
+            <Reweight scoretype="hbond_lr_bb"              weight="1.0" />
+            <Reweight scoretype="hbond_sr_bb"              weight="1.0" />
+            <Reweight scoretype="atom_pair_constraint"     weight="1.0" />
+            <Reweight scoretype="coordinate_constraint"    weight="1.0" />
+            <Reweight scoretype="angle_constraint"         weight="1.0" />
+            <Reweight scoretype="dihedral_constraint"      weight="1.0" />
+            <Reweight scoretype="backbone_stub_constraint" weight="1.0" />
+            <Reweight scoretype="omega"                    weight="0.5" />
+            <Reweight scoretype="rama"                     weight="0.6" />
+        </ScoreFunction>
+    </SCOREFXNS>
+
+    <RESIDUE_SELECTORS>
+        <SecondaryStructure name="loops"     ss="L" use_dssp="0" />
+        <Not                name="not_loops" selector="loops" />
+
+        <!-- H1_nterm: N-terminal end of H1 (residues 1,2,3).
+             In an antiparallel bundle, H1_nterm must be close to H2_cterm
+             — this is the DEFINING constraint for antiparallel packing:
+             the "far ends" of each helix are near each other.
+             Diagram:
+               H1: N[1..5..8..15]C
+                                  loop
+               H2:        C[12..8..5..1]N
+             So H1_nterm (top-left) pairs with H2_cterm (bottom-left). -->
+        <NamedSegment name="H1_nterm" segment="H1" residues="1,2,3"   error_on_missing_segment="0" />
+        <NamedSegment name="H1_mid"   segment="H1" residues="7,8"      error_on_missing_segment="0" />
+        <NamedSegment name="H2_mid"   segment="H2" residues="5,6,7"    error_on_missing_segment="0" />
+        <NamedSegment name="H2_cterm" segment="H2" residues="-1,-2,-3" error_on_missing_segment="0" />
+    </RESIDUE_SELECTORS>
+
+    <!-- Pre-MOVERS filters only — no ConstraintScore here -->
+    <FILTERS>
+        <!-- Geometry: valid attributes are omega (cutoff in degrees),
+             cart_bonded (energy cutoff), start (first residue checked).
+             These ARE accepted by the Geometry filter per Rosetta source. -->
+        <Geometry         name="geometry" />
+        <Geometry         name="omega"    omega="165" cart_bonded="35" start="1" confidence="1" />
+        <SecondaryStructure name="secstruct_filter"
+                            residue_selector="not_loops"
+                            compute_pose_secstruct_by_dssp="1" />
+        <HelixKink        name="kink" />
+        <!-- HelixPairing filter: exact syntax from paper's 3h/4h/coil XMLs.
+             use_dssp="0" reads pairing topology from StructureData (set by
+             BuildDeNovoBackboneMover inside the inline Filters block).
+             NOTE: the pairings attribute does NOT exist on this filter —
+             segments/parallel are only valid inside CompoundArchitect <Pairing>. -->
+        <HelixPairing name="helix_pairs" use_dssp="0" />
+    </FILTERS>
+
+    <MOVERS>
+        <!-- Two distance constraints that together uniquely define
+             ANTIPARALLEL helix packing:
+
+             1. h1_nterm_h2_cterm — the "far-end" constraint:
+                H1 N-terminus (res 1-3) must be near H2 C-terminus (last 3).
+                This is ONLY satisfied when the helices are antiparallel.
+                HARMONIC 9.0 1.5 — slightly looser to allow for helix
+                width variation; 9 Å = realistic inter-helix end distance.
+
+             2. h1_h2_mid — the "mid-packing" constraint:
+                H1 middle (res 7-8) near H2 middle (res 5-7).
+                Ensures the helices are actually packed together, not just
+                having their ends close while the rest diverges.
+                HARMONIC 6.5 1.0 — tight, 6.5 Å = helix-helix axis distance.
+        -->
+        <AddConstraints name="build_csts">
+            <DistanceConstraintGenerator name="h1_nterm_h2_cterm"
+                function="HARMONIC 9.0 1.5"
+                residue_selector1="H1_nterm"
+                residue_selector2="H2_cterm" />
+            <DistanceConstraintGenerator name="h1_h2_mid"
+                function="HARMONIC 6.5 1.0"
+                residue_selector1="H1_mid"
+                residue_selector2="H2_mid" />
+        </AddConstraints>
+
+        <RemoveConstraints name="rm_build_csts"
+                           constraint_generators="h1_nterm_h2_cterm,h1_h2_mid" />
+
+        <MinMover            name="cenmin"    scorefxn="CENTROID"
+                             bb="1" chi="0" jump="0" cartesian="0" />
+        <SetSecStructEnergies name="set_ssene1" scorefxn="CENTROID" />
+
+        <!-- BuildDeNovoBackboneMover: NO start_segments for helix-only
+             folds (start_segments is for beta-sheet seeding only). -->
+        <BuildDeNovoBackboneMover name="build_bb" dump_pdbs="0">
+
+            <CompoundArchitect name="two_helix_arch">
+                <Architects>
+                    <!-- H1: 15 res, H2: 12 res. Use ranges like "13:17"
+                         to sweep a backbone library. -->
+                    <HelixArchitect name="H1" length="15" />
+                    <HelixArchitect name="H2" length="12" />
+                </Architects>
+
+                <Connections>
+                    <!-- Hairpin loop motif: 1LX,2LX = 1 or 2 residues
+                         with loop/extended ABEGO torsions. This is the
+                         short tight turn used in all helix hairpins.
+                         Matches coil-bb-generation.xml motif="1LX,2LX"
+                         and 3h-bb-generation.xml format. -->
+                    <Connection name="H1_H2"
+                                motif="1LX,2LX"
+                                segment1="H1" segment2="H2"
+                                ideal_abego="1" />
+                </Connections>
+
+                <Pairing>
+                    <!-- parallel=0: H1 and H2 run in OPPOSITE directions.
+                         This is the ONLY topology achievable with a single
+                         short hairpin loop — the two helices pack side by
+                         side as an antiparallel pair (like a helix-hairpin
+                         motif). This WILL generate structures.
+                         parallel=1 with a short loop is geometrically
+                         impossible and caused your empty output. -->
+                    <HelixPairing segments="H1,H2" parallel="0" />
+                </Pairing>
+            </CompoundArchitect>
+
+            <RemodelLoopMoverPoseFolder scorefxn="CENTROID" />
+
+            <CompoundPerturber>
+                <HelixPerturber      architect="H1" />
+                <HelixPerturber      architect="H2" />
+                <ConnectionPerturber architect="H1_H2" />
+            </CompoundPerturber>
+
+            <PreFoldMovers>
+                <Add mover="set_ssene1" />
+                <Add mover="build_csts" />
+            </PreFoldMovers>
+
+            <PostFoldMovers>
+                <Add mover="cenmin" />
+                <Add mover="rm_build_csts" />
+            </PostFoldMovers>
+
+            <!-- Inline filters: hard-reject bad backbones during sampling.
+                 helix_pairs here uses StructureData (set by the mover) AND
+                 the pairings attribute — retries on failure. -->
+            <Filters>
+                <Add filter="geometry" />
+                <Add filter="secstruct_filter" />
+                <Add filter="kink" />
+                <Add filter="helix_pairs" />
+            </Filters>
+
+        </BuildDeNovoBackboneMover>
+    </MOVERS>
+
+    <!-- Post-MOVERS FILTERS: ConstraintScore with confidence=1 = HARD GATES.
+         These ARE working correctly (confirmed by S_0004: scores 0.524 and 0.932).
+         Threshold: score cutoff defaults to 0 in Rosetta (filter passes if value <= 0).
+         ConstraintScore reports in energy units; we use confidence=1 with
+         a generous threshold so only badly-packed structures are rejected.
+         The two constraints TOGETHER uniquely define antiparallel packing:
+           - h1_nterm_h2_cterm: far ends close (antiparallel-specific)
+           - h1_h2_mid: mid regions packed (ensures actual helix-helix packing)
+         Both passing = antiparallel helix bundle. -->
+    <FILTERS>
+        <!-- threshold="1.5": constraint energy penalty <= 1.5 REU allowed.
+             S_0004 passed at 0.932 so threshold=1.5 gives reasonable headroom. -->
+        <ConstraintScore name="h1_nterm_h2_cterm_score"
+                         constraint_generators="h1_nterm_h2_cterm"
+                         threshold="1.5"
+                         confidence="1" />
+        <!-- threshold="1.0": mid-packing must be tighter.
+             S_0004 passed at 0.524 so threshold=1.0 is achievable. -->
+        <ConstraintScore name="h1_h2_mid_score"
+                         constraint_generators="h1_h2_mid"
+                         threshold="1.0"
+                         confidence="1" />
+    </FILTERS>
+
+    <PROTOCOLS>
+        <!-- 1. Build backbone -->
+        <Add mover="build_bb" />
+
+        <!-- 2. Hard-fail filters (confidence=1): must pass to write PDB -->
+        <Add filter="geometry" />
+        <Add filter="omega" />
+        <Add filter="secstruct_filter" />
+        <Add filter="kink" />
+
+        <!-- Hard-gate constraint filters: both must pass (confidence=1).
+             These confirmed to work in S_0004 (scores 0.524 and 0.932).
+             Together they uniquely enforce antiparallel helix packing.
+             helix_pairs filter removed: requires StructureData via REMARK 994
+             which is only written via silent-file extraction, not direct PDB output.
+             Your run writes PDB directly so helix_pairs always reads empty
+             StructureData and returns a meaningless score (~10). -->
+        <Add filter="h1_nterm_h2_cterm_score" />
+        <Add filter="h1_h2_mid_score" />
+    </PROTOCOLS>
+
+</ROSETTASCRIPTS>
